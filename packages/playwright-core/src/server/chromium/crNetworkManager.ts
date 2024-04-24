@@ -189,7 +189,24 @@ export class CRNetworkManager {
     });
   }
 
-  _onRequestWillBeSent(sessionInfo: SessionInfo, event: Protocol.Network.requestWillBeSentPayload) {
+  async _onRequestWillBeSent(sessionInfo: SessionInfo, event: Protocol.Network.requestWillBeSentPayload) {
+    // In Chromium, if a request is cloned, it will have not have the postData entries as part of the request, we need to get them explicitly
+    if (event.request.hasPostData && event.request.postDataEntries === undefined) {
+
+      // Debug: activate this to force Network.getRequestPostData to resolve after the response is received to create bug
+      // await new Promise(resolve => {
+      //   setTimeout(resolve, 500);
+      // });
+
+      const postDataResponse = await sessionInfo.session.send('Network.getRequestPostData', {
+        requestId: event.requestId
+      });
+
+      if (!!postDataResponse)
+        event.request.postDataEntries = [{ bytes: Buffer.from(postDataResponse.postData).toString('base64') }];
+
+    }
+
     // Request interception doesn't happen for data URLs with Network Service.
     if (this._protocolRequestInterceptionEnabled && !event.request.url.startsWith('data:')) {
       const requestId = event.requestId;

@@ -324,6 +324,45 @@ it('should round-trip har with postData', async ({ contextFactory, server }, tes
   expect(await page2.evaluate(fetchFunction, '4').catch(e => e)).toBeTruthy();
 });
 
+it('should round-trip har with postData for cloned requests', async ({ contextFactory, server }, testInfo) => {
+  server.setRoute('/echo', async (req, res) => {
+    const body = await req.postBody;
+    res.end(body.toString());
+  });
+
+  const harPath = testInfo.outputPath('har.zip');
+  const context1 = await contextFactory();
+  await context1.routeFromHAR(harPath, { update: true });
+
+  const page1 = await context1.newPage();
+  await page1.goto(server.EMPTY_PAGE);
+  const fetchFunction = async (body: string) => {
+    const request = new Request('/echo', { method: 'POST', body }).clone();
+    const response = await fetch(request);
+    return await response.text();
+  };
+
+  await page1.route('*', async route => {
+    await route.continue();
+  });
+
+  expect(await page1.evaluate(fetchFunction, '1')).toBe('1');
+  expect(await page1.evaluate(fetchFunction, '2')).toBe('2');
+  expect(await page1.evaluate(fetchFunction, '3')).toBe('3');
+  await context1.close();
+
+  server.reset();
+  const context2 = await contextFactory();
+  await context2.routeFromHAR(harPath, { notFound: 'abort' });
+  const page2 = await context2.newPage();
+  await page2.goto(server.EMPTY_PAGE);
+
+  expect(await page2.evaluate(fetchFunction, '1')).toBe('1');
+  expect(await page2.evaluate(fetchFunction, '2')).toBe('2');
+  expect(await page2.evaluate(fetchFunction, '3')).toBe('3');
+  expect(await page2.evaluate(fetchFunction, '4').catch(e => e)).toBeTruthy();
+});
+
 it('should record overridden requests to har', async ({ contextFactory, server }, testInfo) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/29190' });
   server.setRoute('/echo', async (req, res) => {
